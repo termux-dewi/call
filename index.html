@@ -2,150 +2,236 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat & Call App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Golongan Chat & Call</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    
     <style>
-        :root { --bg: #0f172a; --card: #1e293b; --primary: #3b82f6; --success: #22c55e; }
-        body { font-family: sans-serif; background: var(--bg); color: white; margin: 0; padding: 10px; }
-        .hidden { display: none; }
-        .card { background: var(--card); padding: 15px; border-radius: 10px; margin-bottom: 10px; }
-        input { width: 100%; padding: 10px; margin: 5px 0; border-radius: 5px; border: none; box-sizing: border-box; }
-        button { padding: 10px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; }
+        :root { 
+            --wa-bg: #0b141a; --wa-header: #202c33; 
+            --wa-me: #005c4b; --wa-them: #262d31; 
+            --wa-text: #e9edef; --wa-input: #2a3942;
+            --accent: #00a884;
+        }
         
-        /* Layout Chat */
-        #chat-box { height: 200px; overflow-y: auto; background: #0f172a; padding: 10px; border-radius: 5px; margin-bottom: 10px; font-size: 14px; }
-        .msg { margin-bottom: 8px; padding: 5px 10px; border-radius: 5px; width: fit-content; }
-        .msg-me { background: var(--primary); margin-left: auto; }
-        .msg-them { background: #334155; }
+        body { 
+            font-family: 'Segoe UI', Helvetica, Arial, sans-serif; 
+            background: var(--wa-bg); color: var(--wa-text); 
+            margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+        }
+
+        .hidden { display: none !important; }
+
+        /* Auth Screen */
+        #auth-view { 
+            display: flex; flex-direction: column; align-items: center; 
+            justify-content: center; height: 100%; padding: 20px; 
+        }
+        .auth-card { background: var(--wa-header); padding: 30px; border-radius: 10px; width: 100%; max-width: 300px; text-align: center; }
+
+        /* App Header */
+        header { background: var(--wa-header); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10; }
+        .user-info { display: flex; align-items: center; gap: 10px; }
+        .status-dot { width: 10px; height: 10px; background: var(--accent); border-radius: 50%; }
+
+        /* Video Area */
+        #video-container { display: flex; background: #000; gap: 5px; padding: 5px; overflow-x: auto; min-height: 80px; }
+        video { height: 100px; border-radius: 8px; background: #111; aspect-ratio: 4/3; object-fit: cover; border: 1px solid #333; }
+        #localVideo { border-color: var(--accent); transform: scaleX(-1); }
+
+        /* Chat Area */
+        #chat-view { 
+            flex: 1; display: flex; flex-direction: column; 
+            background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+            background-repeat: repeat; background-attachment: fixed;
+        }
+        #chat-messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 8px; }
         
-        #video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-        video { width: 100%; border-radius: 10px; background: #000; }
-        .user-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #334155; }
+        .bubble { max-width: 80%; padding: 8px 12px; border-radius: 8px; font-size: 14px; position: relative; line-height: 1.4; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+        .me { background: var(--wa-me); align-self: flex-end; border-top-right-radius: 0; }
+        .them { background: var(--wa-them); align-self: flex-start; border-top-left-radius: 0; }
+        .sender { font-size: 11px; font-weight: bold; color: #8696a0; margin-bottom: 2px; display: block; }
+
+        /* Input Area */
+        .input-bar { background: var(--wa-header); padding: 10px; display: flex; align-items: center; gap: 10px; }
+        input { flex: 1; background: var(--wa-input); border: none; padding: 12px; border-radius: 20px; color: white; outline: none; }
+        .btn-send { background: var(--accent); border: none; width: 45px; height: 45px; border-radius: 50%; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+        /* User List Drawer */
+        #user-drawer { background: #111b21; border-top: 1px solid #2a3942; max-height: 150px; overflow-y: auto; }
+        .user-item { padding: 12px 16px; border-bottom: 1px solid #222; display: flex; justify-content: space-between; align-items: center; }
+        .call-btns button { background: #2a3942; border: none; color: white; padding: 5px 10px; border-radius: 4px; margin-left: 5px; font-size: 12px; }
     </style>
 </head>
 <body>
 
-    <div id="auth-view" class="card">
-        <h2>Login / Register</h2>
-        <input type="text" id="username" placeholder="Username">
-        <input type="password" id="password" placeholder="Password">
-        <button onclick="handleAuth('login')" style="background: var(--primary); color: white;">Login</button>
-        <button onclick="handleAuth('register')" style="background: transparent; color: white; border: 1px solid white;">Register</button>
+    <div id="auth-view">
+        <div class="auth-card">
+            <h2 style="color: var(--accent);">GOLONGAN</h2>
+            <input type="text" id="username" placeholder="Masukkan Nama Anda...">
+            <button onclick="doLogin()" style="background: var(--accent); color: white; border: none; width: 100%; padding: 12px; margin-top: 10px; border-radius: 5px; font-weight: bold;">MASUK</button>
+        </div>
     </div>
 
-    <div id="main-view" class="hidden">
-        <div class="card">
-            <h3 id="welcome">Halo</h3>
-            <div id="video-grid"><video id="localVideo" autoplay muted playsinline></video></div>
+    <div id="main-view" class="hidden" style="display: flex; flex-direction: column; height: 100%;">
+        <header>
+            <div class="user-info">
+                <div class="status-dot"></div>
+                <b id="display-name">Username</b>
+            </div>
+            <button onclick="logout()" style="background:none; border:none; color:#ff4b4b; font-size:12px;">LOGOUT</button>
+        </header>
+
+        <div id="video-container">
+            <video id="localVideo" autoplay muted playsinline></video>
         </div>
 
-        <div class="card">
-            <h4>Global Group Chat</h4>
-            <div id="chat-box"></div>
-            <div style="display: flex;">
-                <input type="text" id="chat-input" placeholder="Ketik pesan grup...">
-                <button onclick="sendChat('GROUP')" style="background: var(--success); color: white; margin-left: 5px;">Kirim</button>
+        <div id="chat-view">
+            <div id="chat-messages"></div>
+            <div class="input-bar">
+                <input type="text" id="msg-input" placeholder="Ketik pesan..." onkeypress="if(event.key==='Enter') sendMessage()">
+                <button class="btn-send" onclick="sendMessage()">➤</button>
             </div>
         </div>
 
-        <div class="card">
-            <h4>Teman Online</h4>
-            <div id="user-list"></div>
+        <div id="user-drawer">
+            <div id="online-list"></div>
         </div>
     </div>
 
 <script>
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyl77WYiPCqW0-Ngx36attf3PmxwpXIlri4qteaQG1vCzdo8Ux7ZouIpqiICWpaUgYt/exec";
-    let myPeer, localStream, currentUser, currentTarget = "GROUP";
-
-    // AUTO LOGIN
-    window.onload = () => {
-        const u = localStorage.getItem('v_user'), p = localStorage.getItem('v_pass');
-        if(u && p) { document.getElementById('username').value = u; document.getElementById('password').value = p; handleAuth('login'); }
+    // --- KONFIGURASI FIREBASE ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyA335JEP-5VPS60PcttrNh_D0DJ7XiLu2A",
+        authDomain: "golongan.firebaseapp.com",
+        databaseURL: "https://golongan-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "golongan",
+        storageBucket: "golongan.firebasestorage.app",
+        messagingSenderId: "927321543281",
+        appId: "1:927321543281:web:99a74c3e826dbe882641d0",
+        measurementId: "G-P313SLJTN7"
     };
 
-    async function handleAuth(type) {
-        const user = document.getElementById('username').value, pass = document.getElementById('password').value;
-        myPeer = new Peer();
-        const pId = await new Promise(r => myPeer.on('open', r));
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    let currentUser, myPeer, localStream;
 
-        const res = await fetch(SCRIPT_URL, {
-            method: "POST",
-            body: JSON.stringify({ action: type, username: user, password: pass, peerId: pId })
+    // --- LOGIN & AUTO LOGIN ---
+    window.onload = () => {
+        const saved = localStorage.getItem('golongan_user');
+        if (saved) {
+            document.getElementById('username').value = saved;
+            doLogin();
+        }
+    };
+
+    async function doLogin() {
+        const user = document.getElementById('username').value.trim();
+        if (!user) return alert("Isi nama dulu!");
+        
+        currentUser = user;
+        localStorage.setItem('golongan_user', user);
+
+        myPeer = new Peer();
+        myPeer.on('open', id => {
+            // Simpan info online ke Firebase
+            const myRef = db.ref('users/' + currentUser);
+            myRef.set({ peerId: id, lastSeen: Date.now() });
+            myRef.onDisconnect().remove(); // Hapus jika offline
+            
+            initApp();
         });
-        const result = await res.text();
-        if (result.includes("ok")) {
-            localStorage.setItem('v_user', user); localStorage.setItem('v_pass', pass);
-            currentUser = user; startApp();
-        } else if (type === "register") alert("Berhasil Register!");
     }
 
-    async function startApp() {
+    async function initApp() {
         document.getElementById('auth-view').classList.add('hidden');
         document.getElementById('main-view').classList.remove('hidden');
-        document.getElementById('welcome').innerText = "Halo, " + currentUser;
+        document.getElementById('display-name').innerText = currentUser;
 
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        document.getElementById('localVideo').srcObject = localStream;
+        // Ambil Kamera
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            document.getElementById('localVideo').srcObject = localStream;
+        } catch (e) { console.log("Kamera tidak aktif"); }
 
-        myPeer.on('call', call => { call.answer(localStream); setupStream(call); });
-
-        setInterval(refreshUsers, 5000);
-        setInterval(fetchChats, 3000); // Ambil chat tiap 3 detik
-    }
-
-    async function sendChat(target) {
-        const input = document.getElementById('chat-input');
-        if(!input.value) return;
-        await fetch(SCRIPT_URL, {
-            method: "POST",
-            body: JSON.stringify({ action: "send_chat", from: currentUser, to: target, msg: input.value })
+        // Listen Chat Grup (Real-time)
+        db.ref('messages/global').limitToLast(50).on('child_added', snap => {
+            const m = snap.val();
+            renderMessage(m);
         });
-        input.value = ""; fetchChats();
+
+        // Listen User Online
+        db.ref('users').on('value', snap => {
+            const users = snap.val();
+            const listEl = document.getElementById('online-list');
+            listEl.innerHTML = "";
+            for (let name in users) {
+                if (name === currentUser) continue;
+                listEl.innerHTML += `
+                    <div class="user-item">
+                        <span>● ${name}</span>
+                        <div class="call-btns">
+                            <button onclick="startCall('${users[name].peerId}', 'voice')">📞</button>
+                            <button onclick="startCall('${users[name].peerId}', 'video')">📹</button>
+                        </div>
+                    </div>`;
+            }
+        });
+
+        // Handle Panggilan Masuk
+        myPeer.on('call', call => {
+            call.answer(localStream);
+            call.on('stream', s => addRemoteStream(s, call.peer));
+        });
     }
 
-    async function fetchChats() {
-        const res = await fetch(`${SCRIPT_URL}?action=get_chat&me=${currentUser}&target=${currentTarget}`);
-        const chats = await res.json();
-        const box = document.getElementById('chat-box');
-        box.innerHTML = chats.map(c => `<div class="msg ${c[1]==currentUser?'msg-me':'msg-them'}"><b>${c[1]}:</b> ${c[3]}</div>`).join('');
+    // --- CHAT FUNCTIONS ---
+    function sendMessage() {
+        const input = document.getElementById('msg-input');
+        if (!input.value.trim()) return;
+
+        db.ref('messages/global').push({
+            sender: currentUser,
+            text: input.value,
+            time: Date.now()
+        });
+        input.value = "";
+    }
+
+    function renderMessage(m) {
+        const box = document.getElementById('chat-messages');
+        const isMe = m.sender === currentUser;
+        const div = document.createElement('div');
+        div.className = `bubble ${isMe ? 'me' : 'them'}`;
+        div.innerHTML = `<span class="sender">${isMe ? 'Anda' : m.sender}</span>${m.text}`;
+        box.appendChild(div);
         box.scrollTop = box.scrollHeight;
     }
 
-    async function refreshUsers() {
-        const res = await fetch(SCRIPT_URL);
-        const users = await res.json();
-        const list = document.getElementById('user-list');
-        list.innerHTML = users.filter(u => u.username !== currentUser).map(u => `
-            <div class="user-item">
-                <span>${u.username}</span>
-                <div>
-                    <button onclick="startCall('${u.peerId}', 'vc')" style="background:var(--success); color:white;">VC</button>
-                    <button onclick="openPrivateChat('${u.username}')" style="background:var(--primary); color:white;">Chat</button>
-                </div>
-            </div>
-        `).join('');
+    // --- CALL FUNCTIONS ---
+    function startCall(targetId, type) {
+        if (!localStream) return alert("Izin kamera dibutuhkan");
+        // Matikan video jika hanya voice
+        localStream.getVideoTracks()[0].enabled = (type === 'video');
+        
+        const call = myPeer.call(targetId, localStream);
+        call.on('stream', s => addRemoteStream(s, targetId));
     }
 
-    function openPrivateChat(name) {
-        currentTarget = name;
-        alert("Sekarang chatting dengan: " + name);
-        fetchChats();
+    function addRemoteStream(stream, id) {
+        if (document.getElementById(id)) return;
+        const v = document.createElement('video');
+        v.id = id; v.srcObject = stream; v.autoplay = true; v.playsinline = true;
+        document.getElementById('video-container').appendChild(v);
     }
 
-    function startCall(id, type) {
-        const call = myPeer.call(id, localStream, { metadata: { type } });
-        setupStream(call);
-    }
-
-    function setupStream(call) {
-        call.on('stream', s => {
-            if (document.getElementById(call.peer)) return;
-            const v = document.createElement('video'); v.id = call.peer; v.srcObject = s; v.autoplay = true; v.playsinline = true;
-            document.getElementById('video-grid').appendChild(v);
-        });
+    function logout() {
+        localStorage.clear();
+        location.reload();
     }
 </script>
 </body>
-</html>
+    </html>
