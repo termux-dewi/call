@@ -2,154 +2,174 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>GitHub Video Call</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-User Video Call (Sheets DB)</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
-        .card { background: #1e1e1e; padding: 20px; border-radius: 10px; display: inline-block; min-width: 300px; }
-        input { width: 80%; padding: 10px; margin: 10px 0; border-radius: 5px; border: none; }
-        button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; }
-        .btn-reg { background: #6c757d; color: white; }
-        .btn-login { background: #28a745; color: white; }
-        #video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 20px; }
-        video { width: 100%; border-radius: 10px; background: #000; transform: scaleX(-1); }
+        :root { --bg: #0f172a; --card: #1e293b; --primary: #3b82f6; --success: #22c55e; --danger: #ef4444; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: white; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .container { width: 90%; max-width: 400px; margin-top: 50px; }
+        .card { background: var(--card); padding: 25px; border-radius: 15px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); text-align: center; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; transition: 0.3s; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); }
         .hidden { display: none; }
-        .user-item { border-bottom: 1px solid #333; padding: 10px; display: flex; justify-content: space-between; }
+        
+        /* Dashboard & Video */
+        #main-view { width: 95%; max-width: 1000px; margin-top: 20px; }
+        #video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; width: 100%; }
+        video { width: 100%; border-radius: 12px; background: #000; transform: scaleX(-1); aspect-ratio: 4/3; object-fit: cover; }
+        .user-list { margin-top: 30px; background: var(--card); border-radius: 12px; padding: 15px; }
+        .user-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #334155; }
+        .btn-small { width: auto; padding: 6px 12px; margin: 0 5px; font-size: 12px; }
     </style>
 </head>
 <body>
 
-    <div id="auth-view" class="card">
-        <h2>Login / Register</h2>
-        <input type="text" id="username" placeholder="Username">
-        <input type="password" id="password" placeholder="Password">
-        <br>
-        <button class="btn-login" onclick="login()">Login</button>
-        <button class="btn-reg" onclick="register()">Register (Save to GitHub)</button>
+    <div id="auth-view" class="container">
+        <div class="card">
+            <h2 id="auth-title">Masuk Ke Call</h2>
+            <input type="text" id="username" placeholder="Username">
+            <input type="password" id="password" placeholder="Password">
+            <button class="btn-primary" onclick="handleAuth('login')">Login</button>
+            <button class="btn-outline" onclick="handleAuth('register')">Buat Akun Baru</button>
+            <p id="auth-msg" style="font-size: 12px; color: #94a3b8; margin-top: 15px;"></p>
+        </div>
     </div>
 
     <div id="main-view" class="hidden">
-        <h3 id="welcome">Halo</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 id="welcome-text">Halo, User</h3>
+            <button onclick="location.reload()" class="btn-small" style="background: var(--danger); color: white;">Logout</button>
+        </div>
+
         <div id="video-grid">
             <video id="localVideo" autoplay muted playsinline></video>
         </div>
-        <h4>Daftar User (Maks 9)</h4>
-        <div id="user-list">Memuat database...</div>
+
+        <div class="user-list">
+            <h4>Teman Online (Maks 9)</h4>
+            <div id="online-users-container">Mencari teman...</div>
+        </div>
     </div>
 
 <script>
-    // --- KONFIGURASI GITHUB (Ganti bagian ini) ---
-    const GITHUB_TOKEN = "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"; 
-    const REPO_OWNER = "termux_dewi";
-    const REPO_NAME = "call";
-    const FILE_PATH = "database.json";
+    // --- KONFIGURASI (WAJIB ISI) ---
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx9AYLOCnO5-jxYX5qUfI545j9l7ef5h6Ee6MYUwUCMsU_gN-kyktSK5zkAcHwXAmQa/exec";
+    
+    let myPeer, localStream, myPeerId, currentUser;
 
-    let myPeer, localStream, currentUser, myPeerId;
+    // 1. FUNGSI AUTH (LOGIN & REGISTER)
+    async function handleAuth(type) {
+        const user = document.getElementById('username').value.trim();
+        const pass = document.getElementById('password').value.trim();
+        const msg = document.getElementById('auth-msg');
 
-    // --- FUNGSI GITHUB API (Read & Write) ---
-    async function getDB() {
-        const res = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`, {
-            headers: { Authorization: `token ${GITHUB_TOKEN}` }
-        });
-        const data = await res.json();
-        const content = atob(data.content); // Decode Base64
-        return { users: JSON.parse(content), sha: data.sha };
-    }
+        if (!user || !pass) return alert("Isi username & password!");
+        msg.innerText = "Memproses ke Google Sheets...";
 
-    async function saveDB(newUsers, sha) {
-        const content = btoa(JSON.stringify(newUsers, null, 2));
-        await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`, {
-            method: "PUT",
-            headers: { Authorization: `token ${GITHUB_TOKEN}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ message: "Update database.json", content, sha })
-        });
-    }
+        // Untuk Login, kita perlu PeerID agar bisa ditemukan orang lain
+        let tempPeerId = "";
+        if (type === "login") {
+            myPeer = new Peer();
+            tempPeerId = await new Promise(resolve => myPeer.on('open', resolve));
+            myPeerId = tempPeerId;
+        }
 
-    // --- AUTH LOGIC ---
-    async function register() {
-        const user = document.getElementById('username').value;
-        const pass = document.getElementById('password').value;
-        const db = await getDB();
-        
-        if (db.users.find(u => u.username === user)) return alert("User sudah ada!");
-        
-        db.users.push({ username: user, password: pass, peerId: "" });
-        await saveDB(db.users, db.sha);
-        alert("Berhasil Register! Silakan Login.");
-    }
+        try {
+            const res = await fetch(SCRIPT_URL, {
+                method: "POST",
+                body: JSON.stringify({ action: type, username: user, password: pass, peerId: tempPeerId })
+            });
+            const result = await res.text();
 
-    async function login() {
-        const user = document.getElementById('username').value;
-        const pass = document.getElementById('password').value;
-        const db = await getDB();
-        
-        const found = db.users.find(u => u.username === user && u.password === pass);
-        if (found) {
-            currentUser = user;
-            document.getElementById('auth-view').classList.add('hidden');
-            document.getElementById('main-view').classList.remove('hidden');
-            document.getElementById('welcome').innerText = "Halo, " + user;
-            startCallSystem(db);
-        } else {
-            alert("Login Gagal!");
+            if (result.includes("Success")) {
+                alert("Berhasil Daftar! Silakan klik Login.");
+                msg.innerText = "";
+            } else if (result.includes("ok")) {
+                currentUser = user;
+                showDashboard();
+            } else {
+                alert("Gagal: " + result);
+                msg.innerText = "";
+            }
+        } catch (e) {
+            alert("Error Koneksi: Pastikan URL Script benar & Deploy Anyone.");
         }
     }
 
-    // --- CALL SYSTEM ---
-    async function startCallSystem(db) {
+    // 2. TAMPILAN DASHBOARD
+    async function showDashboard() {
+        document.getElementById('auth-view').classList.add('hidden');
+        document.getElementById('main-view').classList.remove('hidden');
+        document.getElementById('welcome-text').innerText = "Halo, " + currentUser;
+
+        // Ambil Kamera
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         document.getElementById('localVideo').srcObject = localStream;
 
-        myPeer = new Peer();
-        myPeer.on('open', async (id) => {
-            myPeerId = id;
-            // Update PeerId kita di GitHub agar orang lain bisa panggil
-            const latestDB = await getDB();
-            const index = latestDB.users.findIndex(u => u.username === currentUser);
-            latestDB.users[index].peerId = id;
-            await saveDB(latestDB.users, latestDB.sha);
-            renderUsers(latestDB.users);
-        });
-
+        // Handle Panggilan Masuk
         myPeer.on('call', call => {
             call.answer(localStream);
-            handleIncomingStream(call);
+            setupRemoteStream(call);
         });
+
+        // Cek User Online setiap 5 detik
+        refreshOnlineUsers();
+        setInterval(refreshOnlineUsers, 5000);
     }
 
-    function renderUsers(users) {
-        const list = document.getElementById('user-list');
-        list.innerHTML = "";
-        users.forEach(u => {
-            if (u.username === currentUser || !u.peerId) return;
-            list.innerHTML += `
-                <div class="user-item">
+    // 3. REFRESH LIST USER ONLINE
+    async function refreshOnlineUsers() {
+        try {
+            const res = await fetch(SCRIPT_URL);
+            const users = await res.json();
+            const container = document.getElementById('online-users-container');
+            container.innerHTML = "";
+
+            users.forEach(u => {
+                if (u.username === currentUser) return;
+                const div = document.createElement('div');
+                div.className = "user-item";
+                div.innerHTML = `
                     <span>${u.username}</span>
                     <div>
-                        <button onclick="makeCall('${u.peerId}', 'call')" style="background:green">Voice</button>
-                        <button onclick="makeCall('${u.peerId}', 'vc')" style="background:blue">Video</button>
+                        <button class="btn-small btn-primary" onclick="startCall('${u.peerId}', 'call')">Voice</button>
+                        <button class="btn-small btn-primary" style="background:var(--success)" onclick="startCall('${u.peerId}', 'vc')">Video</button>
                     </div>
-                </div>`;
-        });
+                `;
+                container.appendChild(div);
+            });
+            if (users.length <= 1) container.innerText = "Tidak ada teman online.";
+        } catch (e) { console.log("Gagal update list"); }
     }
 
-    function makeCall(id, type) {
+    // 4. LOGIKA MEMANGGIL (CALL)
+    function startCall(targetPeerId, type) {
+        // Matikan track video jika hanya Voice Call
         localStream.getVideoTracks()[0].enabled = (type === 'vc');
-        const call = myPeer.call(id, localStream, { metadata: { type } });
-        handleIncomingStream(call);
+        
+        const call = myPeer.call(targetPeerId, localStream, { metadata: { type } });
+        setupRemoteStream(call);
     }
 
-    function handleIncomingStream(call) {
-        const video = document.createElement('video');
-        call.on('stream', stream => {
+    function setupRemoteStream(call) {
+        call.on('stream', remoteStream => {
             if (document.getElementById(call.peer)) return;
+            const video = document.createElement('video');
             video.id = call.peer;
-            video.srcObject = stream;
+            video.srcObject = remoteStream;
             video.autoplay = true;
-            if (call.metadata?.type === 'call') video.style.display = 'none';
-            document.getElementById('video-grid').append(video);
+            video.playsinline = true;
+            
+            // Sembunyikan video jika metadata adalah 'call' (Voice Only)
+            if (call.metadata && call.metadata.type === 'call') video.style.display = "none";
+            
+            document.getElementById('video-grid').appendChild(video);
         });
     }
 </script>
 </body>
-</html>
+                </html>
