@@ -3,173 +3,149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-User Video Call (Sheets DB)</title>
+    <title>Chat & Call App</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        :root { --bg: #0f172a; --card: #1e293b; --primary: #3b82f6; --success: #22c55e; --danger: #ef4444; }
-        body { font-family: 'Inter', sans-serif; background: var(--bg); color: white; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
-        .container { width: 90%; max-width: 400px; margin-top: 50px; }
-        .card { background: var(--card); padding: 25px; border-radius: 15px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); text-align: center; }
-        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; transition: 0.3s; }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); }
+        :root { --bg: #0f172a; --card: #1e293b; --primary: #3b82f6; --success: #22c55e; }
+        body { font-family: sans-serif; background: var(--bg); color: white; margin: 0; padding: 10px; }
         .hidden { display: none; }
+        .card { background: var(--card); padding: 15px; border-radius: 10px; margin-bottom: 10px; }
+        input { width: 100%; padding: 10px; margin: 5px 0; border-radius: 5px; border: none; box-sizing: border-box; }
+        button { padding: 10px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; }
         
-        /* Dashboard & Video */
-        #main-view { width: 95%; max-width: 1000px; margin-top: 20px; }
-        #video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; width: 100%; }
-        video { width: 100%; border-radius: 12px; background: #000; transform: scaleX(-1); aspect-ratio: 4/3; object-fit: cover; }
-        .user-list { margin-top: 30px; background: var(--card); border-radius: 12px; padding: 15px; }
-        .user-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #334155; }
-        .btn-small { width: auto; padding: 6px 12px; margin: 0 5px; font-size: 12px; }
+        /* Layout Chat */
+        #chat-box { height: 200px; overflow-y: auto; background: #0f172a; padding: 10px; border-radius: 5px; margin-bottom: 10px; font-size: 14px; }
+        .msg { margin-bottom: 8px; padding: 5px 10px; border-radius: 5px; width: fit-content; }
+        .msg-me { background: var(--primary); margin-left: auto; }
+        .msg-them { background: #334155; }
+        
+        #video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+        video { width: 100%; border-radius: 10px; background: #000; }
+        .user-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #334155; }
     </style>
 </head>
 <body>
 
-    <div id="auth-view" class="container">
-        <div class="card">
-            <h2 id="auth-title">Masuk Ke Call</h2>
-            <input type="text" id="username" placeholder="Username">
-            <input type="password" id="password" placeholder="Password">
-            <button class="btn-primary" onclick="handleAuth('login')">Login</button>
-            <button class="btn-outline" onclick="handleAuth('register')">Buat Akun Baru</button>
-            <p id="auth-msg" style="font-size: 12px; color: #94a3b8; margin-top: 15px;"></p>
-        </div>
+    <div id="auth-view" class="card">
+        <h2>Login / Register</h2>
+        <input type="text" id="username" placeholder="Username">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="handleAuth('login')" style="background: var(--primary); color: white;">Login</button>
+        <button onclick="handleAuth('register')" style="background: transparent; color: white; border: 1px solid white;">Register</button>
     </div>
 
     <div id="main-view" class="hidden">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h3 id="welcome-text">Halo, User</h3>
-            <button onclick="location.reload()" class="btn-small" style="background: var(--danger); color: white;">Logout</button>
+        <div class="card">
+            <h3 id="welcome">Halo</h3>
+            <div id="video-grid"><video id="localVideo" autoplay muted playsinline></video></div>
         </div>
 
-        <div id="video-grid">
-            <video id="localVideo" autoplay muted playsinline></video>
+        <div class="card">
+            <h4>Global Group Chat</h4>
+            <div id="chat-box"></div>
+            <div style="display: flex;">
+                <input type="text" id="chat-input" placeholder="Ketik pesan grup...">
+                <button onclick="sendChat('GROUP')" style="background: var(--success); color: white; margin-left: 5px;">Kirim</button>
+            </div>
         </div>
 
-        <div class="user-list">
-            <h4>Teman Online (Maks 9)</h4>
-            <div id="online-users-container">Mencari teman...</div>
+        <div class="card">
+            <h4>Teman Online</h4>
+            <div id="user-list"></div>
         </div>
     </div>
 
 <script>
-    // --- KONFIGURASI (WAJIB ISI) ---
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx9AYLOCnO5-jxYX5qUfI545j9l7ef5h6Ee6MYUwUCMsU_gN-kyktSK5zkAcHwXAmQa/exec";
-    
-    let myPeer, localStream, myPeerId, currentUser;
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyl77WYiPCqW0-Ngx36attf3PmxwpXIlri4qteaQG1vCzdo8Ux7ZouIpqiICWpaUgYt/exec";
+    let myPeer, localStream, currentUser, currentTarget = "GROUP";
 
-    // 1. FUNGSI AUTH (LOGIN & REGISTER)
+    // AUTO LOGIN
+    window.onload = () => {
+        const u = localStorage.getItem('v_user'), p = localStorage.getItem('v_pass');
+        if(u && p) { document.getElementById('username').value = u; document.getElementById('password').value = p; handleAuth('login'); }
+    };
+
     async function handleAuth(type) {
-        const user = document.getElementById('username').value.trim();
-        const pass = document.getElementById('password').value.trim();
-        const msg = document.getElementById('auth-msg');
+        const user = document.getElementById('username').value, pass = document.getElementById('password').value;
+        myPeer = new Peer();
+        const pId = await new Promise(r => myPeer.on('open', r));
 
-        if (!user || !pass) return alert("Isi username & password!");
-        msg.innerText = "Memproses ke Google Sheets...";
-
-        // Untuk Login, kita perlu PeerID agar bisa ditemukan orang lain
-        let tempPeerId = "";
-        if (type === "login") {
-            myPeer = new Peer();
-            tempPeerId = await new Promise(resolve => myPeer.on('open', resolve));
-            myPeerId = tempPeerId;
-        }
-
-        try {
-            const res = await fetch(SCRIPT_URL, {
-                method: "POST",
-                body: JSON.stringify({ action: type, username: user, password: pass, peerId: tempPeerId })
-            });
-            const result = await res.text();
-
-            if (result.includes("Success")) {
-                alert("Berhasil Daftar! Silakan klik Login.");
-                msg.innerText = "";
-            } else if (result.includes("ok")) {
-                currentUser = user;
-                showDashboard();
-            } else {
-                alert("Gagal: " + result);
-                msg.innerText = "";
-            }
-        } catch (e) {
-            alert("Error Koneksi: Pastikan URL Script benar & Deploy Anyone.");
-        }
+        const res = await fetch(SCRIPT_URL, {
+            method: "POST",
+            body: JSON.stringify({ action: type, username: user, password: pass, peerId: pId })
+        });
+        const result = await res.text();
+        if (result.includes("ok")) {
+            localStorage.setItem('v_user', user); localStorage.setItem('v_pass', pass);
+            currentUser = user; startApp();
+        } else if (type === "register") alert("Berhasil Register!");
     }
 
-    // 2. TAMPILAN DASHBOARD
-    async function showDashboard() {
+    async function startApp() {
         document.getElementById('auth-view').classList.add('hidden');
         document.getElementById('main-view').classList.remove('hidden');
-        document.getElementById('welcome-text').innerText = "Halo, " + currentUser;
+        document.getElementById('welcome').innerText = "Halo, " + currentUser;
 
-        // Ambil Kamera
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         document.getElementById('localVideo').srcObject = localStream;
 
-        // Handle Panggilan Masuk
-        myPeer.on('call', call => {
-            call.answer(localStream);
-            setupRemoteStream(call);
+        myPeer.on('call', call => { call.answer(localStream); setupStream(call); });
+
+        setInterval(refreshUsers, 5000);
+        setInterval(fetchChats, 3000); // Ambil chat tiap 3 detik
+    }
+
+    async function sendChat(target) {
+        const input = document.getElementById('chat-input');
+        if(!input.value) return;
+        await fetch(SCRIPT_URL, {
+            method: "POST",
+            body: JSON.stringify({ action: "send_chat", from: currentUser, to: target, msg: input.value })
         });
-
-        // Cek User Online setiap 5 detik
-        refreshOnlineUsers();
-        setInterval(refreshOnlineUsers, 5000);
+        input.value = ""; fetchChats();
     }
 
-    // 3. REFRESH LIST USER ONLINE
-    async function refreshOnlineUsers() {
-        try {
-            const res = await fetch(SCRIPT_URL);
-            const users = await res.json();
-            const container = document.getElementById('online-users-container');
-            container.innerHTML = "";
-
-            users.forEach(u => {
-                if (u.username === currentUser) return;
-                const div = document.createElement('div');
-                div.className = "user-item";
-                div.innerHTML = `
-                    <span>${u.username}</span>
-                    <div>
-                        <button class="btn-small btn-primary" onclick="startCall('${u.peerId}', 'call')">Voice</button>
-                        <button class="btn-small btn-primary" style="background:var(--success)" onclick="startCall('${u.peerId}', 'vc')">Video</button>
-                    </div>
-                `;
-                container.appendChild(div);
-            });
-            if (users.length <= 1) container.innerText = "Tidak ada teman online.";
-        } catch (e) { console.log("Gagal update list"); }
+    async function fetchChats() {
+        const res = await fetch(`${SCRIPT_URL}?action=get_chat&me=${currentUser}&target=${currentTarget}`);
+        const chats = await res.json();
+        const box = document.getElementById('chat-box');
+        box.innerHTML = chats.map(c => `<div class="msg ${c[1]==currentUser?'msg-me':'msg-them'}"><b>${c[1]}:</b> ${c[3]}</div>`).join('');
+        box.scrollTop = box.scrollHeight;
     }
 
-    // 4. LOGIKA MEMANGGIL (CALL)
-    function startCall(targetPeerId, type) {
-        // Matikan track video jika hanya Voice Call
-        localStream.getVideoTracks()[0].enabled = (type === 'vc');
-        
-        const call = myPeer.call(targetPeerId, localStream, { metadata: { type } });
-        setupRemoteStream(call);
+    async function refreshUsers() {
+        const res = await fetch(SCRIPT_URL);
+        const users = await res.json();
+        const list = document.getElementById('user-list');
+        list.innerHTML = users.filter(u => u.username !== currentUser).map(u => `
+            <div class="user-item">
+                <span>${u.username}</span>
+                <div>
+                    <button onclick="startCall('${u.peerId}', 'vc')" style="background:var(--success); color:white;">VC</button>
+                    <button onclick="openPrivateChat('${u.username}')" style="background:var(--primary); color:white;">Chat</button>
+                </div>
+            </div>
+        `).join('');
     }
 
-    function setupRemoteStream(call) {
-        call.on('stream', remoteStream => {
+    function openPrivateChat(name) {
+        currentTarget = name;
+        alert("Sekarang chatting dengan: " + name);
+        fetchChats();
+    }
+
+    function startCall(id, type) {
+        const call = myPeer.call(id, localStream, { metadata: { type } });
+        setupStream(call);
+    }
+
+    function setupStream(call) {
+        call.on('stream', s => {
             if (document.getElementById(call.peer)) return;
-            const video = document.createElement('video');
-            video.id = call.peer;
-            video.srcObject = remoteStream;
-            video.autoplay = true;
-            video.playsinline = true;
-            
-            // Sembunyikan video jika metadata adalah 'call' (Voice Only)
-            if (call.metadata && call.metadata.type === 'call') video.style.display = "none";
-            
-            document.getElementById('video-grid').appendChild(video);
+            const v = document.createElement('video'); v.id = call.peer; v.srcObject = s; v.autoplay = true; v.playsinline = true;
+            document.getElementById('video-grid').appendChild(v);
         });
     }
 </script>
 </body>
-                </html>
+</html>
